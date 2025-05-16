@@ -42,7 +42,7 @@ import pickle
 from sklearn.decomposition import PCA
 import mxnet as mx
 from mxnet import ndarray as nd
-import face_image
+import common.face_image as face_image
 
 
 # Used to split data for K-fold crossvalidation

@@ -36,10 +36,15 @@ def align_face(img, landmarks, output_shape=(112, 112)):
 
 
 def align_landmarks(landmarks):
-    lms = get_landmarks(landmarks)
-    dst = lms.astype(np.float32)
+    """
+    landmarks: Array numpy de shape (68, 2)
+    Devuelve: Array numpy de shape (68, 2) con puntos alineados
+    """
+    reference_points = get_landmarks(landmarks)  # Solo 5 puntos para la transformación
     tform = trans.SimilarityTransform()
-    tform.estimate(align_default, dst)
-    pad_landmarks = np.pad(landmarks, [(0, 0), (0, 1)], 'constant', constant_values=1).transpose()
-    new_landmarks = np.dot(np.linalg.inv(tform.params), pad_landmarks).transpose()
+    tform.estimate(align_default, reference_points.astype(np.float32))
+
+    # Aplicar transformación a los 68 puntos
+    pad_landmarks = np.pad(landmarks, [(0, 0), (0, 1)], 'constant', constant_values=1)
+    new_landmarks = np.dot(tform.params, pad_landmarks.T).T
     return new_landmarks[:, :2].astype(np.float32)

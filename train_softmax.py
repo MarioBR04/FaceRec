@@ -13,8 +13,8 @@ np.bool = bool
 import pandas
 from sklearn.model_selection import train_test_split
 
-from data import FaceImageIter
-from data import FaceImageIterList
+from datap import FaceImageIter
+from datap import FaceImageIterList
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
 import common.face_image as face_image
@@ -102,13 +102,13 @@ class LossValueMetric(mx.metric.EvalMetric):
 def parse_args():
     parser = argparse.ArgumentParser(description='Train face network')
     # general
-    parser.add_argument('--data-dir', default='/home/mariobr04/Downloads/archive',
+    parser.add_argument('--data-dir', default='/home/mariobr04/PycharmProjects/MobileFaceNet/input/lfw-dataset',
                         help='')
-    parser.add_argument('--prefix', default='../model/model',
+    parser.add_argument('--prefix', default='models/model',
                         help='directory to save model.')
-    parser.add_argument('--pretrained', default='',
+    parser.add_argument('--pretrained', default='models/model,98',
                         help='')
-    parser.add_argument('--retrain', action='store_true', default=False,  # was false
+    parser.add_argument('--retrain', action='store_true', default=True,  # was false
                         help='true means continue training.')
     parser.add_argument('--ckpt', type=int, default=1, help='')  # default = 1
     parser.add_argument('--network', default='s20', help='')  # default='s20'
@@ -116,10 +116,10 @@ def parse_args():
     parser.add_argument('--version-input', type=int, default=1, help='')
     parser.add_argument('--version-output', type=str, default='E', help='')
     parser.add_argument('--version-unit', type=int, default=3, help='')
-    parser.add_argument('--end-epoch', type=int, default=100000,
+    parser.add_argument('--end-epoch', type=int, default=50,
                         help='training epoch size.')
     parser.add_argument('--noise-sgd', type=float, default=0.0, help='')
-    parser.add_argument('--lr', type=float, default=0.1, help='')
+    parser.add_argument('--lr', type=float, default=0.001, help='')
     parser.add_argument('--wd', type=float, default=0.0005, help='')
     parser.add_argument('--mom', type=float, default=0.9,
                         help='')
@@ -162,7 +162,7 @@ def parse_args():
     parser.add_argument('--triplet-alpha', type=float, default=0.3, help='')
     parser.add_argument('--triplet-max-ap', type=float, default=0.0, help='')
     parser.add_argument('--verbose', type=int, default=2000, help='')
-    parser.add_argument('--loss-type', type=int, default=4,  # default 1
+    parser.add_argument('--loss-type', type=int, default=2,  # default 1
                         help='')
     parser.add_argument('--incay', type=float, default=0.0,
                         help='feature incay')
@@ -181,21 +181,21 @@ def parse_args():
 
 
 def create_data(dataset_path):
-    lfw_allnames = pandas.read_csv("../input/lfw-dataset/lfw_allnames.csv")
-    matchpairsDevTest = pandas.read_csv("../input/lfw-dataset/matchpairsDevTest.csv")
-    matchpairsDevTrain = pandas.read_csv(".. / input / lfw - dataset / matchpairsDevTrain.csv")
-    mismatchpairsDevTest = pandas.read_csv("• / input / lfw - dataset / mismatchpairsDevTest.csv")
-    mismatchpairsDevTrain = pandas.read_csv(".. / input / lfw - dataset / mismatchpairsDevTrain.csv")
-    pairs = pandas.read_csv("../input/lfw-dataset/pairs.csv")
+    lfw_allnames = pandas.read_csv("input/lfw-dataset/lfw_allnames.csv")
+    matchpairsDevTest = pandas.read_csv("input/lfw-dataset/matchpairsDevTest.csv")
+    matchpairsDevTrain = pandas.read_csv(".input/lfw-dataset/matchpairsDevTrain.csv")
+    mismatchpairsDevTest = pandas.read_csv("input/lfw-dataset/mismatchpairsDevTest.csv")
+    mismatchpairsDevTrain = pandas.read_csv("input/lfw-dataset/mismatchpairsDevTrain.csv")
+    pairs = pandas.read_csv(".input/lfw-dataset/pairs.csv")
     # tidy pairs data:
     pairs = pairs.rename(columns={'name': 'name1', 'Unnamed: 3': 'name2'})
     matched_pairs = pairs[pairs["name2"] - pandas.isnull()].drop("name2", axis=1)
     mismatched_pairs = pairs[pairs["namez"].notnull()]
-    people = pandas.read_csv(".. / input / lfw - dataset / people.csv")
+    people = pandas.read_csv("input/lfw-dataset/people.csv")
     # remove null values
     people = people[people.name.notnull()]
-    peopleDevTest = pandas.read_csv("./input/lfw-dataset/peopleDevTest.csv")
-    peopleDevTrain = pandas.read_csv(".. / input / lfw - dataset/peopleDevTrain.csv")
+    peopleDevTest = pandas.read_csv("input/lfw-dataset/peopleDevTest.csv")
+    peopleDevTrain = pandas.read_csv("input/lfw-dataset/peopleDevTrain.csv")
     image_paths = lfw_allnames.loc[lfw_allnames.index.repeat(lfw_allnames['images'])]
     image_paths[' image_path'] = 1 + image_paths.groupby('name ').cumcount()
     image_paths[' image_path'] = image_paths.image_path.apply(lambda x: "{0:0>4}" - format(x))
@@ -533,6 +533,10 @@ def get_symbol(args, arg_params, aux_params):
 
 
 def train_net(args):
+    highest_accT = 0.0  # Rastrea el mejor accuracy hasta el momento
+    best_epoch = 0  # Época donde se alcanzó el mejor accuracy
+
+
     ctx = []
     cvd = '0'
     if len(cvd) > 0:
@@ -581,7 +585,7 @@ def train_net(args):
     print('num_classes', args.num_classes)
     args.coco_scale = 0.5 * math.log(float(args.num_classes - 1)) + 3
 
-    path_imgrec = os.path.join(data_dir, "train.rec")
+    path_imgrec = os.path.join(data_dir, "lfw_landmarks.rec")
     val_rec = os.path.join(data_dir, "val.rec")
     if os.path.exists(val_rec) and args.loss_type < 10:
         args.use_val = True
@@ -873,11 +877,46 @@ def train_net(args):
         if args.max_steps > 0 and mbatch > args.max_steps:
             sys.exit(0)
 
+    def _epoch_callback(epoch, sym, arg_params, aux_params):
+        nonlocal highest_accT, best_epoch
+
+        train_dataiter.reset()
+        acc_metric = AccMetric()
+        eval_metric = mx.metric.create(acc_metric)
+
+        for batch in train_dataiter:
+            model.forward(batch, is_train=False)
+            model.update_metric(eval_metric, batch.label)
+
+        raw_value = eval_metric.get_name_value()[0][1]
+        current_acc = float(raw_value[0]) if isinstance(raw_value, list) else float(raw_value)
+
+        if current_acc > highest_accT:
+            highest_accT = current_acc
+            best_epoch = epoch
+
+            # Guardar usando nombre fijo para los pesos: "model.params"
+            model_prefix = args.prefix  # Ej. "./checkpoints/model"
+            param_filename = f"{model_prefix}.params"
+            symbol_filename = f"{model_prefix}-symbol.json"
+
+            # Guardar los parámetros (params) y el símbolo (opcional)
+            save_dict = {('arg:%s' % k): v.as_in_context(mx.cpu()) for k, v in arg_params.items()}
+            save_dict.update({('aux:%s' % k): v.as_in_context(mx.cpu()) for k, v in aux_params.items()})
+            mx.nd.save(param_filename, save_dict)
+
+            sym.save(symbol_filename)
+
+            print(f'✅ [Época {epoch}] Accuracy mejorado: {current_acc:.4f} (Guardado como model.params)')
+        else:
+            print(f'✖ [Época {epoch}] Accuracy actual: {current_acc:.4f} (Mejor: {highest_accT:.4f})')
+
     # epoch_cb = mx.callback.do_checkpoint(prefix, 1)
-    epoch_cb = None
 
     # def _epoch_callback(epoch, sym, arg_params, aux_params):
     #  print('epoch-end', epoch)
+
+
 
     model.fit(train_dataiter,
               begin_epoch=begin_epoch,
@@ -892,8 +931,10 @@ def train_net(args):
               aux_params=aux_params,
               allow_missing=True,
               batch_end_callback=_batch_callback,
-              epoch_end_callback=epoch_cb)
+              epoch_end_callback=_epoch_callback)
 
+    arg_params, aux_params = model.get_params()
+    mx.model.save_checkpoint(args.prefix, args.end_epoch, model.symbol, arg_params, aux_params)
 
 def main():
     # time.sleep(3600*6.5)

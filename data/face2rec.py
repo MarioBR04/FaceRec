@@ -47,18 +47,31 @@ def image_encode(args, i, item, q_out):
     item: list
     q_out: Queue
     """
+    print(f"Item sample: {item[:5]}...{item[-5:]}")  # Muestra inicio y fin del item
+    print(f"Total valores: {len(item)} (necesarios: {3 + 136})")  # 3 metadatos + 136 landmarks
     # adding suffix to image name
     name, ext = os.path.splitext(item[1])
     new_name = name + args.suffix + ext
     fullpath = os.path.join(args.root, new_name)
 
     if args.pack_label:
-        landmarks = np.array(item[7:143]).reshape(68, 2)
-        lms = align_landmarks(landmarks)
-        lms = get_landmarks(lms).flatten().tolist()
-        header = mx.recordio.IRHeader(0, item[2:3] + lms, item[0], 0)
+        landmarks = np.array([float(x) for x in item[3:139]]).reshape(68, 2)
+
+        # Debug: Verificar landmarks antes de alinear
+        print(f"Landmarks crudos (de .lst): {landmarks.shape}")
+
+        # Alinear TODOS los landmarks (68 puntos)
+        aligned_landmarks = align_landmarks(landmarks)
+
+        # Debug: Verificar landmarks después de alinear
+        print(f"Landmarks alineados: {aligned_landmarks.shape}")
+
+        # Aplanar y convertir a float explícitamente
+        lms_flat = [float(x) for x in aligned_landmarks.flatten().tolist()]
+        # Asegúrate de incluir TODOS los valores (class_id + 136 landmarks)
+        header = mx.recordio.IRHeader(0, [float(item[2])] + lms_flat, item[0], 0)
     else:
-        header = mx.recordio.IRHeader(0, item[2], item[0], 0)
+        header = mx.recordio.IRHeader(0, float(item[2]), item[0], 0)
 
     if args.pass_through:
         try:
@@ -73,10 +86,19 @@ def image_encode(args, i, item, q_out):
         return
 
     try:
+        print("Intentando leer:", fullpath)
+        if not os.path.exists(fullpath):
+            print(f"ERROR: Archivo no existe: {fullpath}")
+            q_out.put((i, None, item))
+            return
+
         img = cv2.imread(fullpath, args.color)
-    except:
-        traceback.print_exc()
-        print('imread error trying to load file: %s ' % fullpath)
+        if img is None:
+            print(f'ERROR: cv2.imread no pudo leer la imagen: {fullpath}')
+            q_out.put((i, None, item))
+            return
+    except Exception as e:
+        print(f'ERROR imread: {fullpath} - {str(e)}')
         q_out.put((i, None, item))
         return
     if img is None:
@@ -85,7 +107,7 @@ def image_encode(args, i, item, q_out):
         return
 
     # Align face
-    landmark = np.array(item[7:143]).reshape(68, 2)
+    landmark = np.array(item[3:139]).reshape(68, 2)
     img = align_face(img, landmark)
     try:
         s = mx.recordio.pack_img(header, img, quality=args.quality, img_fmt=args.encoding)
@@ -115,27 +137,24 @@ def read_worker(args, q_in, q_out):
 
 
 def write_worker(q_out, fname, working_dir):
-    """Function that will be spawned to fetch processed image
-    from the output queue and write to the .rec file.
-    Parameters
-    ----------
-    q_out: queue
-    fname: string
-    working_dir: string
-    """
     pre_time = time.time()
     count = 0
     fname = os.path.basename(fname)
 
-    fname_rec = os.path.splitext(fname)[0] + '{}.rec'.format(args.suffix)
-    fname_idx = os.path.splitext(fname)[0] + '{}.idx'.format(args.suffix)
+    fname_rec = os.path.splitext(fname)[0] + '.rec'
+    fname_idx = os.path.splitext(fname)[0] + '.idx'
+
+    print(f"Creating record files: {fname_rec} and {fname_idx} in {working_dir}")
 
     record = mx.recordio.MXIndexedRecordIO(os.path.join(working_dir, fname_idx),
                                            os.path.join(working_dir, fname_rec), 'w')
+    print(f"Record IO opened successfully")
+
     buf = {}
     more = True
     while more:
         deq = q_out.get()
+        print(f"Dequeued item: {deq}")  # <-- Añade este log
         if deq is not None:
             i, s, item = deq
             buf[i] = (s, item)
@@ -145,14 +164,17 @@ def write_worker(q_out, fname, working_dir):
             s, item = buf[count]
             del buf[count]
             if s is not None:
+                print(f"Writing item {count}")  # <-- Añade este log
                 record.write_idx(item[0], s)
+            else:
+                print(f"Skipping None item {count}")
 
-            if count % 1000 == 0:
+            if count % 100 == 0:  # Cambiado a 100 para más frecuencia
                 cur_time = time.time()
                 print('time: {:.2f} count: {}'.format(cur_time - pre_time, count))
                 pre_time = cur_time
             count += 1
-
+    print(f"Finished writing {count} items")
 
 def parse_args():
     """Defines all arguments.
@@ -205,7 +227,7 @@ if __name__ == '__main__':
              if os.path.isfile(os.path.join(working_dir, fname))]
     count = 0
     for fname in files:
-        if fname.startswith(args.prefix) and fname.endswith('.lst'):
+        if os.path.splitext(os.path.basename(fname))[0] == os.path.basename(args.prefix) and fname.endswith('.lst'):
             print('Creating .rec file from', fname, 'in', working_dir)
             count += 1
             image_list = read_list(fname)

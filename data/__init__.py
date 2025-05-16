@@ -45,7 +45,7 @@ def read_list(path_in, refine_index=True):
             line = fin.readline()
             if not line:
                 break
-            line = [i.strip() for i in line.strip().split('\t')]
+            line = [i.strip() for i in line.strip().split()]
             line_len = len(line)
             # check the data format of .lst file
             if line_len < 3:
@@ -53,9 +53,9 @@ def read_list(path_in, refine_index=True):
                 continue
             try:
                 if refine_index:
-                    item = [idx] + [line[-1]] + [float(i) for i in line[1:-1]]
+                    item = [idx, line[1]] + [float(i) for i in line[2:]]
                 else:
-                    item = [int(line[0])] + [line[-1]] + [float(i) for i in line[1:-1]]
+                    item = [int(line[0]), line[1]] + [float(i) for i in line[2:]]
                 idx += 1
             except Exception as e:
                 print('Parsing lst met error for %s, detail: %s' % (line, e))
